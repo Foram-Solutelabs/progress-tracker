@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "extension:build": "cd extension && npm run build",
+    "extension:watch": "cd extension && npm run watch"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
