@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body { width: 220px; padding: 16px; font-family: system-ui, sans-serif; background: #0f0f14; color: #e5e7eb; margin: 0; }
+      .status { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; }
+      .dot.green { background: #22c55e; }
+      .dot.yellow { background: #eab308; }
+      .dot.gray { background: #6b7280; }
+      p { margin: 4px 0; font-size: 13px; color: #9ca3af; }
+      strong { color: #e5e7eb; }
+    </style>
+  </head>
+  <body>
+    <div class="status">
+      <div class="dot" id="dot"></div>
+      <strong id="status-text">Loading…</strong>
+    </div>
+    <p id="user-name"></p>
+    <p id="today-hours"></p>
+    <script src="dist/popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "learning-tracker-extension",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node -e \"const e=require('esbuild'); const entries=['src/background.ts','src/offscreen.ts','src/content-auth.ts','src/popup.ts']; entries.forEach(entry => e.context({entryPoints:[entry],bundle:true,outdir:'dist',format:'esm',platform:'browser'}).then(ctx => ctx.watch()))\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0",
+    "@types/chrome": "^0.0.268",
+    "typescript": "^5.4.0",
+    "face-api.js": "^0.22.2",
+    "@tensorflow/tfjs": "^4.0.0"
+  }
+}

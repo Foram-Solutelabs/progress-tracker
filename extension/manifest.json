@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Learning Tracker",
+  "version": "1.0.0",
+  "description": "Tracks your learning time and verifies your presence.",
+  "permissions": ["tabs", "storage", "offscreen"],
+  "host_permissions": [
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:3000/*"],
+      "js": ["dist/content-auth.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Learning Tracker"
+  }
+}
