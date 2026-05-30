@@ -39,4 +39,7 @@ next-env.d.ts
 .env.local
 public/models/
 extension/dist/
+extension/node_modules/
 .superpowers/
+
+/src/generated/prisma
