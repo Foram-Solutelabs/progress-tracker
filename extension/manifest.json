@@ -3,7 +3,7 @@
   "name": "Learning Tracker",
   "version": "1.0.0",
   "description": "Tracks your learning time and verifies your presence.",
-  "permissions": ["tabs", "storage", "offscreen"],
+  "permissions": ["tabs", "storage", "offscreen", "alarms"],
   "host_permissions": [
     "http://localhost:3000/*"
   ],

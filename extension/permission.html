@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Learning Tracker — Enable Camera</title>
+    <style>
+      body { font-family: system-ui, sans-serif; background: #0f0f14; color: #e5e7eb; margin: 0;
+             min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+      .card { max-width: 440px; padding: 32px; text-align: center; }
+      h1 { font-size: 20px; margin: 0 0 12px; }
+      p { color: #9ca3af; font-size: 14px; line-height: 1.6; }
+      #msg { margin-top: 20px; font-size: 15px; font-weight: 600; }
+      .ok { color: #22c55e; } .err { color: #f87171; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>📷 Enable camera for Learning Tracker</h1>
+      <p>The tracker checks that you're present at your screen. Click <strong>Allow</strong> on the
+         camera prompt. You can then close this tab — monitoring starts automatically.</p>
+      <p id="msg">Requesting camera…</p>
+    </div>
+    <script src="dist/permission.js"></script>
+  </body>
+</html>

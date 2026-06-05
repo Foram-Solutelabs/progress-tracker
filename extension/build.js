@@ -6,6 +6,7 @@ const entries = [
   'src/offscreen.ts',
   'src/content-auth.ts',
   'src/popup.ts',
+  'src/permission.ts',
 ]
 
 for (const entry of entries) {

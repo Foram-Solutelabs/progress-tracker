@@ -1,6 +1,14 @@
 'use client'
 export function WeekPicker({ value, onChange }: { value: string; onChange: (iso: string) => void }) {
-  return <input type="week" value={toWeekInput(value)} onChange={e => onChange(fromWeekInput(e.target.value))} className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+  return (
+    <input
+      type="week"
+      value={toWeekInput(value)}
+      onChange={e => onChange(fromWeekInput(e.target.value))}
+      className="field !py-2 !px-3 text-sm font-mono tabular w-[9.5rem]"
+      style={{ colorScheme: 'dark', accentColor: 'var(--amber)' }}
+    />
+  )
 }
 function toWeekInput(iso: string): string {
   const d = new Date(iso); const y = d.getUTCFullYear()
