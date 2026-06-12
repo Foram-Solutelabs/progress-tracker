@@ -44,3 +44,5 @@ extension/node_modules/
 .superpowers/
 
 /src/generated/prisma
+
+certificates

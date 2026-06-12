@@ -3,6 +3,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
+const MODEL_LOAD_TIMEOUT_MS = 15_000 // a blocked/stalled /models fetch hangs forever — fail loudly instead
+
+// Reject if `promise` doesn't settle within `ms`. Without this, an ad/content
+// blocker that silently holds the /models requests open leaves loadFromUri
+// pending forever and the screen stuck on "Booting sensor".
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timeout: ${label}`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -50,18 +63,33 @@ export default function LoginPage() {
 
     async function init() {
       const faceapi = await import('face-api.js')
-      await faceapi.nets.ssdMobilenetv1.loadFromUri('/models')
-      await faceapi.nets.faceLandmark68Net.loadFromUri('/models')
-      await faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+      // Independent fetches → load in parallel under one timeout budget.
+      await withTimeout(
+        Promise.all([
+          faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+          faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+          faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
+        ]),
+        MODEL_LOAD_TIMEOUT_MS,
+        'models'
+      )
       faceapiRef.current = faceapi
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 320, height: 240 },
       })
       if (stopped || !videoRef.current) return
-      videoRef.current.srcObject = stream
-      await new Promise<void>(resolve => { videoRef.current!.onloadeddata = () => resolve() })
-      await videoRef.current.play()
+      // Register before setting srcObject — with autoPlay the event can fire before
+      // the next microtask if the camera track is already live (e.g. extension in use).
+      // onloadedmetadata fires earlier than onloadeddata and is reliable for MediaStreams.
+      // Timeout ensures we never hang if Chrome grants the stream but never fires the event.
+      await new Promise<void>(resolve => {
+        const done = () => { clearTimeout(t); resolve() }
+        const t = setTimeout(done, 3000) // bail after 3 s — camera is live enough to play
+        videoRef.current!.onloadedmetadata = done
+        videoRef.current!.srcObject = stream
+      })
+      await videoRef.current.play().catch(() => { /* autoPlay already started it */ })
       if (stopped) return
       setStatus('ready')
 
@@ -80,9 +108,13 @@ export default function LoginPage() {
       }, 1500)
     }
 
-    init().catch(() => {
+    init().catch((err: unknown) => {
       setStatus('error')
-      setErrorMsg('Could not start camera or load models.')
+      setErrorMsg(
+        err instanceof Error && err.message.startsWith('timeout:')
+          ? 'Timed out loading face models — disable ad/content blockers for localhost and retry.'
+          : 'Could not start camera or load models.'
+      )
     })
 
     return () => {

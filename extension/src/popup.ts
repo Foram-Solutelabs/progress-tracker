@@ -38,6 +38,13 @@ async function render() {
   }
 }
 
+// Hold a live port for as long as the popup is open. The popup isn't a
+// chrome.windows window, so this connection is how the background knows the user
+// is in Chrome (it disconnects the instant the popup closes). Without it the popup
+// would report "Paused — browser not in focus" the moment you open it.
+chrome.runtime.connect({ name: 'popup' })
+
 render()
-// Keep the popup live while it's open (it re-reads the latest status from storage).
+// Reflect background state changes instantly, with a slow poll as a safety net.
+chrome.storage.onChanged.addListener(render)
 setInterval(render, 1500)

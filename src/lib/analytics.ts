@@ -12,6 +12,32 @@ export type WeeklyAnalytics = {
   facePresencePercent: number
   dailyBreakdown: { date: string; seconds: number }[]
   topSites: { domain: string; seconds: number }[]
+  /** Trailing weekly totals ending with the selected week (oldest → newest). */
+  trend: { weekStart: string; seconds: number }[]
+}
+
+const secondsOf = (log: { startedAt: Date; endedAt: Date }) =>
+  (log.endedAt.getTime() - log.startedAt.getTime()) / 1000
+
+/**
+ * Bucket logs into `weeks` consecutive weekly totals, the last bucket being the
+ * week that starts on `latestWeekStart`. Powers the sparkline + week-over-week delta.
+ */
+export function computeTrend(
+  logs: { startedAt: Date; endedAt: Date }[],
+  latestWeekStart: Date,
+  weeks = 8,
+): { weekStart: string; seconds: number }[] {
+  return Array.from({ length: weeks }, (_, i) => {
+    const start = new Date(latestWeekStart)
+    start.setUTCDate(start.getUTCDate() - (weeks - 1 - i) * 7)
+    const end = new Date(start)
+    end.setUTCDate(end.getUTCDate() + 7)
+    const seconds = logs
+      .filter(l => l.startedAt >= start && l.startedAt < end)
+      .reduce((sum, l) => sum + secondsOf(l), 0)
+    return { weekStart: start.toISOString().split('T')[0], seconds }
+  })
 }
 
 export function computeWeeklyAnalytics(logs: LogEntry[], weekStart: Date): WeeklyAnalytics {
@@ -26,11 +52,11 @@ export function computeWeeklyAnalytics(logs: LogEntry[], weekStart: Date): Weekl
         return { date: d.toISOString().split('T')[0], seconds: 0 }
       }),
       topSites: [],
+      trend: [],
     }
   }
 
-  const duration = (log: LogEntry) =>
-    (log.endedAt.getTime() - log.startedAt.getTime()) / 1000
+  const duration = secondsOf
 
   const totalSeconds = logs.reduce((sum, l) => sum + duration(l), 0)
 
@@ -68,5 +94,5 @@ export function computeWeeklyAnalytics(logs: LogEntry[], weekStart: Date): Weekl
     .slice(0, 10)
     .map(([domain, seconds]) => ({ domain, seconds }))
 
-  return { totalSeconds, activeDays, facePresencePercent, dailyBreakdown, topSites }
+  return { totalSeconds, activeDays, facePresencePercent, dailyBreakdown, topSites, trend: [] }
 }

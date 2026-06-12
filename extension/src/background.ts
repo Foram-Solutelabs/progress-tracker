@@ -34,6 +34,14 @@ function queue(task: () => Promise<void>): Promise<unknown> {
   return chain
 }
 
+// Is our toolbar popup currently open? The popup is NOT a chrome.windows window,
+// so it's invisible to getAll()/onFocusChanged — opening it reports WINDOW_ID_NONE
+// with no window focused. The only reliable signal is the live port the popup
+// holds while open (see chrome.runtime.onConnect below): it disconnects the moment
+// the popup closes. A connected popup ALSO keeps this worker alive, so this
+// in-memory flag is valid for exactly as long as it needs to be true.
+let popupOpen = false
+
 // ---- events ----
 chrome.runtime.onStartup.addListener(() => void queue(bootstrap))
 chrome.runtime.onInstalled.addListener(() => void queue(bootstrap))
@@ -43,6 +51,18 @@ chrome.runtime.onMessage.addListener((msg: MessageToBackground) => {
   else if (msg.type === 'FACE_RESULT') void queue(() => onFace(msg.present))
   else if (msg.type === 'OFFSCREEN_STATUS') void queue(() => onOffscreenStatus(msg.status, msg.detail))
   else if (msg.type === 'CAMERA_GRANTED') void queue(onCameraGranted)
+})
+
+// The popup connects this port while open and it disconnects when the popup closes.
+// While open → user is in Chrome → reconcile so its status is immediately correct.
+chrome.runtime.onConnect.addListener(port => {
+  if (port.name !== 'popup') return
+  popupOpen = true
+  void queue(reconcile)
+  port.onDisconnect.addListener(() => {
+    popupOpen = false
+    void queue(reconcile)
+  })
 })
 
 chrome.tabs.onActivated.addListener(info => void queue(() => onTabActivated(info.tabId)))
@@ -58,7 +78,7 @@ chrome.alarms.onAlarm.addListener(a => {
 // ---- handlers ----
 async function bootstrap() {
   await chrome.alarms.create(FLUSH_ALARM, { periodInMinutes: FLUSH_PERIOD_MIN })
-  await write({ browserFocused: true, cameraPromptOpened: false })
+  await write({ cameraPromptOpened: false })
   // Seed the active tab now — onActivated does NOT fire for the tab that was
   // already open when the worker (re)starts, so without this we'd have no tab.
   await reseedActiveTab()
@@ -71,7 +91,6 @@ async function bootstrap() {
     await write({ openSegment: null })
   }
   if (await read<string | null>('token', null)) await ensureOffscreen()
-  console.log('[learning-tracker] service worker started; active tab seeded')
   await flush()
 }
 
@@ -164,31 +183,26 @@ async function reseedActiveTab() {
   await reconcile()
 }
 
-// Focus moved between windows. WINDOW_ID_NONE = Chrome lost focus to another app
-// or was minimized → pause. Any real window id (INCLUDING our own popup/devtools)
-// means Chrome still has focus → keep tracking. We only refresh the active tab
-// when a *normal* window gains focus, so opening the popup never changes the tab.
+// Focus moved between windows. We no longer cache a focused flag here (it gets
+// stuck — see isChromeFocused); we just refresh the active tab when a *normal*
+// window gains focus, then let reconcile() read live focus. Opening the popup
+// never changes the active tab.
 async function onFocusChanged(windowId: number) {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) {
-    await write({ browserFocused: false })
-    console.log('[learning-tracker] focus: left Chrome → paused')
-    await reconcile()
-    return
-  }
-  await write({ browserFocused: true })
-  try {
-    const win = await chrome.windows.get(windowId, { populate: true })
-    if (win.type === 'normal') {
-      const tab = win.tabs?.find(t => t.active)
-      if (tab) {
-        await setActiveTab(tab)
-        return
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+    try {
+      const win = await chrome.windows.get(windowId, { populate: true })
+      if (win.type === 'normal') {
+        const tab = win.tabs?.find(t => t.active)
+        if (tab) {
+          await setActiveTab(tab)
+          return
+        }
       }
+    } catch {
+      /* window vanished */
     }
-  } catch {
-    /* window vanished */
   }
-  await reconcile() // popup/devtools focused → keep existing active tab
+  await reconcile()
 }
 
 // The heart of it: bring the open view in line with live focus + face state.
@@ -211,6 +225,15 @@ async function reconcile() {
     if (open) await bank(open, action.endedAt)
     await write({ openSegment: action.segment })
     console.log('[learning-tracker] ↪ switch →', action.segment.url)
+  }
+
+  // Diagnostic: when paused, show WHY — Chrome focus vs a non-web active tab vs face.
+  if (!focused || !present) {
+    const cf = await isChromeFocused()
+    const at = await read<ActiveTab | null>('activeTab', null)
+    console.log(
+      `[learning-tracker] · idle/paused: present=${present} chromeFocused=${cf} activeTab=${at?.url ?? 'null'}`
+    )
   }
 
   await writeStatus(focused, present)
@@ -247,7 +270,6 @@ async function flush() {
       body: JSON.stringify({ logs: batch }),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    console.log('[learning-tracker] ☁ flushed', batch.length, 'record(s) → server')
   } catch (err) {
     const since = await read<LogEntry[]>('pendingLogs', [])
     await write({ pendingLogs: [...batch, ...since] }) // re-queue for the next alarm
@@ -256,11 +278,30 @@ async function flush() {
 }
 
 // ---- helpers ----
-// The web tab we should be tracking, from stored state (NOT a live focus query —
-// see setActiveTab). Null if Chrome isn't the foreground app or the active tab
-// isn't a real web page. Our own popup/devtools never clear browserFocused.
+// The web tab we should be tracking. Null if Chrome isn't the foreground app or
+// the active tab isn't a real web page.
+//
+// Focus is derived LIVE here rather than cached from chrome.windows.onFocusChanged.
+// That event fires WINDOW_ID_NONE for transient in-Chrome focus shifts (opening
+// our popup, clicking a devtools window) with no reliable paired "regained focus"
+// event on Windows — so a cached flag gets permanently stuck false. reconcile()
+// only ever asks at settled moments (every face result + every event), so a live
+// query reads the truth with no race: if ANY Chrome window (normal/popup/devtools)
+// is focused, Chrome is the foreground app and we should be tracking.
+async function isChromeFocused(): Promise<boolean> {
+  if (popupOpen) return true // our popup is open → user is in Chrome (windows API can't see it)
+  try {
+    const wins = await chrome.windows.getAll({
+      windowTypes: ['normal', 'popup', 'panel', 'app', 'devtools'],
+    })
+    return wins.some(w => w.focused)
+  } catch {
+    return true // can't query → don't pause spuriously
+  }
+}
+
 async function getFocusedWebTab(): Promise<Focus> {
-  if (!(await read<boolean>('browserFocused', true))) return null
+  if (!(await isChromeFocused())) return null
   const t = await read<ActiveTab | null>('activeTab', null)
   if (!t || !/^https?:/i.test(t.url)) return null
   return { url: t.url, title: t.title }

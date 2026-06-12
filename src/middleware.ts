@@ -20,8 +20,24 @@ function decodeJWTPayload(token: string): { userId: string; role: string; exp: n
   }
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400',
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const origin = request.headers.get('Origin') ?? '*'
+
+  // CORS preflight — browsers strip Authorization before sending OPTIONS,
+  // so we must respond here before any auth check; a redirect would fail preflight.
+  if (request.method === 'OPTIONS' && pathname.startsWith('/api/')) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: { 'Access-Control-Allow-Origin': origin, ...CORS_HEADERS },
+    })
+  }
 
   if (PUBLIC.some(p => pathname.startsWith(p))) {
     return NextResponse.next()
@@ -29,7 +45,9 @@ export function middleware(request: NextRequest) {
 
   // Extension calls /api/* with Bearer token (no cookie) — let route handlers validate
   if (pathname.startsWith('/api/') && request.headers.get('Authorization')?.startsWith('Bearer ')) {
-    return NextResponse.next()
+    const res = NextResponse.next()
+    res.headers.set('Access-Control-Allow-Origin', origin)
+    return res
   }
 
   const token = request.cookies.get('lt_token')?.value
